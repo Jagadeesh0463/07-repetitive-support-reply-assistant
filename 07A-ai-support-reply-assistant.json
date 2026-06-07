@@ -1,0 +1,225 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "q": "category:primary -from:mailer-daemon -from:no-reply -from:noreply"
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [-832, -64],
+      "id": "538b5f57-98a1-4382-a55a-436c7e5dd854",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "{{GMAIL_CREDENTIAL_ID}}",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a customer support assistant.\n\nAnalyze the customer email and answer using the company knowledge base.\n\nCustomer Email:\n\nSubject: {{ $json.Subject }}\n\nMessage:\n{{ $json.text || $json.snippet }}\n\nInstructions:\n- Determine customer intent.\n- Search the knowledge base.\n- Generate a professional support email reply.\n- Use only information found in the knowledge base.\n- If information is not found, respond that human review is required.\n- Never invent pricing, refund, billing, shipping, or subscription policies.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [-512, -64],
+      "id": "e995dcbd-2e7f-4be0-addf-4da74ea6857a",
+      "name": "Customer Support AI Agent"
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Search company FAQ, billing, pricing, shipping, refund and subscription policies.",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "support_kb",
+          "mode": "list",
+          "cachedResultName": "support_kb"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [-448, 288],
+      "id": "3e99a8b2-3a01-4b2c-921e-50b021e56e2a",
+      "name": "Qdrant Vector Store",
+      "credentials": {
+        "qdrantApi": {
+          "id": "{{QDRANT_CREDENTIAL_ID}}",
+          "name": "Qdrant account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "llama-3.1-8b-instant",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [-512, 144],
+      "id": "7f9969c6-84fe-438c-9fdd-b636b5d89d34",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "{{GROQ_CREDENTIAL_ID}}",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-embedding-001"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [-448, 512],
+      "id": "045a7644-0970-4ff5-b7ce-7ce92241bcf4",
+      "name": "Embeddings Google Gemini",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "{{GEMINI_CREDENTIAL_ID}}",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{$node[\"Gmail Trigger\"].json[\"From\"].match(/<(.+)>/)?.[1] || $node[\"Gmail Trigger\"].json[\"From\"]}}",
+        "subject": "=Re: {{$node[\"Gmail Trigger\"].json[\"Subject\"]}}",
+        "message": "={{$node[\"Customer Support AI Agent\"].json[\"output\"]}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [304, 64],
+      "id": "cd0a8b13-5480-423a-b290-e1b7505e66fb",
+      "name": "Send a message",
+      "webhookId": "{{WEBHOOK_ID_1}}",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "{{GMAIL_CREDENTIAL_ID}}",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7b7d459d-566a-4bc3-ba65-d7931964eb93",
+              "leftValue": "={{$json.output}}",
+              "rightValue": "human review is required",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "4e545839-47ef-4a4d-ad4f-9b90f94814c5",
+              "leftValue": "={{$json.output}}",
+              "rightValue": "requires human review",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "e410b9dc-36d8-431f-af22-610c986472e6",
+              "leftValue": "={{$json.output}}",
+              "rightValue": "unable to find",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "82b3ed75-9b31-4e90-9b18-f21d271c2cb1",
+              "leftValue": "={{$json.output}}",
+              "rightValue": "not found in knowledge base",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [-128, -64],
+      "id": "91fe70dc-6f01-4f80-a5ff-927859bb1e6b",
+      "name": "Risk Check"
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "=Re: {{$node[\"Gmail Trigger\"].json[\"Subject\"]}}",
+        "message": "={{$node[\"Customer Support AI Agent\"].json[\"output\"]}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [288, -224],
+      "id": "1c6c97a9-7aff-493b-857f-512adcc5dca0",
+      "name": "Human Review Draft",
+      "webhookId": "{{WEBHOOK_ID_2}}",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "{{GMAIL_CREDENTIAL_ID}}",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [[{"node": "Customer Support AI Agent", "type": "main", "index": 0}]]
+    },
+    "Customer Support AI Agent": {
+      "main": [[{"node": "Risk Check", "type": "main", "index": 0}]]
+    },
+    "Qdrant Vector Store": {
+      "ai_tool": [[{"node": "Customer Support AI Agent", "type": "ai_tool", "index": 0}]]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [[{"node": "Customer Support AI Agent", "type": "ai_languageModel", "index": 0}]]
+    },
+    "Embeddings Google Gemini": {
+      "ai_embedding": [[{"node": "Qdrant Vector Store", "type": "ai_embedding", "index": 0}]]
+    },
+    "Risk Check": {
+      "main": [
+        [{"node": "Human Review Draft", "type": "main", "index": 0}],
+        [{"node": "Send a message", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "{{N8N_INSTANCE_ID}}"
+  }
+}
